@@ -1,21 +1,23 @@
 import {AfterContentInit, Component, ContentChildren, ElementRef, OnDestroy, OnInit, QueryList} from '@angular/core';
 import {SliderItemDirective} from "./slider-item.directive";
 import {
+  animationFrameScheduler,
   filter,
   fromEvent,
   map,
   merge,
-  NEVER,
+  NEVER, observeOn,
   of,
   repeat,
   repeatWhen,
   retryWhen,
   share,
-  Subject,
+  Subject, switchMap, take, takeLast,
   takeUntil,
   tap,
   timer
 } from "rxjs";
+import {preventEventPropagation} from "../../utils";
 
 @Component({
   selector: 'app-slider',
@@ -45,12 +47,51 @@ export class SliderComponent implements OnInit, AfterContentInit, OnDestroy {
   ngAfterContentInit() {
     const nativeEl = this.el.nativeElement;
     const items = this.sliderItems.toArray();
+    const touchStart$ = merge(
+      fromEvent(nativeEl, 'touchstart').pipe(
+        map((e: any) => e.touches[0])
+      ),
+      fromEvent(nativeEl, 'mousedown')
+    ).pipe(
+      tap(console.log),
+      preventEventPropagation,
+      tap(e => {
+        this.sliderItems.forEach(item => {
+          this.animateSliderItem(item, null, 0)
+        })
+      })
+    );
 
-    const touchStart$ = of(NEVER);
+    const touchEnd$ = merge(
+      fromEvent(nativeEl, 'touchend'),
+      fromEvent(nativeEl, 'mouseup')
+    )
 
-    const touchMove$ = of(NEVER);
+    const touchMove$ = (startEvent: any) => merge(
+      fromEvent(nativeEl, 'touchmove')
+        .pipe(
+          map((e: any) => e.touches[0])
+        ),
+      fromEvent(nativeEl, 'mousemove')
+    ).pipe(
+      preventEventPropagation,
+      observeOn(animationFrameScheduler),
+      takeUntil(touchEnd$),
+      map(ev => startEvent.pageX - ev.pageX),
+      tap(data => {
+        items.forEach(item => {
+          const delta = this.DELTA_DIRECTION_COEFFICIENT *
+            ((this.active - 1) *
+              this.el.nativeElement.firstChild.clientWidth) - data;
+          this.animateSliderItem(item, delta, null);
+        });
+      }),
+      takeLast(1)
+    );
 
-    const swipe$ = of(NEVER);
+    const swipe$ = touchStart$.pipe(
+      switchMap(startEvent => touchMove$(startEvent))
+    );
 
     const leftArrow$ = fromEvent(document, 'keydown').pipe(
       map((event: Event) => <KeyboardEvent>event),
@@ -65,7 +106,7 @@ export class SliderComponent implements OnInit, AfterContentInit, OnDestroy {
     )
 
     const events$ = merge(
-      // swipe$,
+      swipe$,
       leftArrow$,
       rightArrow$
     ).pipe(share())
@@ -114,8 +155,8 @@ export class SliderComponent implements OnInit, AfterContentInit, OnDestroy {
 
   private animateSliderItem(
     item: SliderItemDirective,
-    delta?: number,
-    transitionTime?: number
+    delta?: number | null,
+    transitionTime?: number | null
   ) {
     if (!!transitionTime) {
       item.setTransition(transitionTime);
