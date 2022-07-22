@@ -87,21 +87,29 @@ export class SliderComponent implements OnInit, AfterContentInit, OnDestroy {
     // merge events and subscribe on them
     merge(events$, timer$).pipe(
       tap((val) => {
-        if (val > this.moveThreshold && this.active < items.length) {
-          this.active++;
-        } else if (val < -1 * this.moveThreshold && this.active > 1) {
-          this.active--;
+        let shouldSwitchSlides = false;
+        if (val > this.moveThreshold) {
+          if (this.active < items.length) {
+            this.active++;
+          } else {
+            this.active = 1;
+            shouldSwitchSlides = true;
+          }
+        } else if (val < -1 * this.moveThreshold) {
+          if (this.active > 1) {
+            this.active--;
+          } else {
+            this.active = items.length;
+          }
         }
 
         items.forEach((item) => {
-          const delta = this.DELTA_DIRECTION_COEFFICIENT * ((this.active - 1) * this.el.nativeElement.firstChild.clientWidth);
-          console.log(delta)
+          const delta = shouldSwitchSlides ? 0 : this.DELTA_DIRECTION_COEFFICIENT * ((this.active - 1) * this.el.nativeElement.firstChild.clientWidth);
           this.animateSliderItem(item, delta, 300);
         })
       }),
       takeUntil(this.destroyed$)
     ).subscribe();
-
   }
 
   private animateSliderItem(
